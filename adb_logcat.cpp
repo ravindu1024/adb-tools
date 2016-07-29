@@ -6,11 +6,12 @@
 #include <iomanip>
 #include <cstdlib>
 #include <list>
-
+#include <sstream>
 #include <sys/ioctl.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <algorithm>
+#include <vector>
 
 #include "colors.h"
 
@@ -56,7 +57,8 @@ int color = 1;
 
 
 
-void ProcessMessageLine(const char* line, int length, Message* msg);
+bool ProcessMessageLine(const char* line, int length, Message* msg);
+bool ProcessMessageLineNewAPI(const char* line, int length, Message* msg);
 char GetLogLevel(int level);
 void PrintOutput(Message* msg, int maxMsgLen);
 void ProcessCmdOptions();
@@ -66,7 +68,8 @@ int GetTagColor(string tag);
 void PrintVersion();
 void PrintHelp();
 bool IgnoreTag(const char* tag);
-
+void setDevice();
+int getSdkVersion();
 
 
 
@@ -129,9 +132,15 @@ int main(int argc, char* argv[])
 		}
 
 		ProcessCmdOptions();
-
 	}
 
+    if(cmd.device.length() == 0)
+        setDevice();
+
+    int sdk = getSdkVersion();
+    //printf("sdk version: %i\n", sdk);
+
+    printf("selected device: %s, SDK: %i\n", cmd.device.c_str(), sdk);
 
 
 	char szLine[MAX_BUFFER_LENGTH] = "";
@@ -155,14 +164,21 @@ int main(int argc, char* argv[])
 	cout << "command: " << command << endl;
 
 	//command = "./test.logcat"; //debug only
+
 	FILE* fp = popen(command.c_str(), "r");
 	if (NULL != fp)
 	{
 		while (fgets(szLine, MAX_BUFFER_LENGTH, fp))
 		{
-			ProcessMessageLine(szLine, sizeof(szLine), &msg);
+            bool print = false;
+
+            if(sdk > 22)
+                print = ProcessMessageLineNewAPI(szLine, sizeof(szLine), &msg);
+            else
+                print = ProcessMessageLine(szLine, sizeof(szLine), &msg);
 			
-			PrintOutput(&msg, maxMsgLen);
+            if(print)
+                PrintOutput(&msg, maxMsgLen);
 		}
 
 
@@ -175,12 +191,12 @@ int main(int argc, char* argv[])
 }
 
 
-void ProcessMessageLine(const char* line, int length, Message* msg)
+bool ProcessMessageLine(const char* line, int length, Message* msg)
 {
 	if (strnlen(line, length) < MIN_LINE_LEN)
 	{
 		msg->level = -1;
-		return;
+        return false;
 	}
 
 	//process Log Level
@@ -227,7 +243,7 @@ void ProcessMessageLine(const char* line, int length, Message* msg)
 		msg->message = string(secondBracket + 3);
 	}
 	
-	
+    return true;
 	
 }
 
@@ -337,14 +353,7 @@ void ProcessCmdOptions()
 	if(argMap.find(ARG_DEVICE) != argMap.end()) cmd.device = argMap.at(ARG_DEVICE);
 	if (argMap.find(ARG_LOGLEVEL) != argMap.end())cmd.loglevel = GetLogLevelInt(argMap.at(ARG_LOGLEVEL).c_str()[0]);
 	if (argMap.find(ARG_TAG) != argMap.end())cmd.tags = argMap.at(ARG_TAG);
-	
-	//findwords have already been processed
-	//for (std::list<string>::iterator itr = cmd.findwords.begin(); itr != cmd.findwords.end(); itr++)
-	//	cout << "find: " << *itr << endl;
 
-	//ignore words have already been processed
-	//for (std::list<string>::iterator itr = cmd.ignoreWords.begin(); itr != cmd.ignoreWords.end(); itr++)
-	//	cout << "ignore: " << *itr << endl;
 }
 
 
@@ -449,4 +458,168 @@ void PrintHelp()
 	cout << ARG_HELP" : show this help section" << endl;
 	cout << "Example usage: logcat -d DEVICE_NAME -t TAG1 TAG2 TAG3 -l D -f word1 word2 \"word3 word4\"" << endl;
 	cout << "\t\tlogcat -e TAG1 TAG*\n" << endl;
+}
+
+void setDevice()
+{
+    char szLine[MAX_BUFFER_LENGTH] = "";
+    vector<string> vDevices;
+
+    vDevices.clear();
+
+    FILE* fp = popen("adb devices", "r");
+
+    int iCount = 0;
+    if (NULL != fp)
+    {
+        while (fgets(szLine, MAX_BUFFER_LENGTH, fp))
+        {
+            if(iCount > 0)
+            {
+                char* c = strchr(szLine, '\t');
+                int len = c - szLine;
+
+                if(len > 0 && len < 100)
+                    vDevices.push_back(string(szLine, len));
+            }
+
+            iCount++;
+            memset(szLine, 0, MAX_BUFFER_LENGTH);
+
+        }
+
+        fclose(fp);
+    }
+    else
+    {
+        printf("Command Error! Could not get available devices\n");
+        exit(0);
+    }
+
+    unsigned int selected = 0;
+    bool validSelection = false;
+
+    while(!validSelection)
+    {
+        if(vDevices.size() > 1)
+        {
+            printf("Please select device:\n");
+            for(unsigned int i=0; i<vDevices.size(); i++)
+            {
+                printf("\t%i: %s\n", i+1, vDevices[i].c_str());
+            }
+
+            scanf("%i", &selected);
+
+            selected--;
+            validSelection = true;
+
+            if(selected < 0 || selected > vDevices.size())
+            {
+                printf("invalid device selection\n");
+                validSelection = false;
+            }
+        }
+        else
+        {
+            validSelection = true;
+            selected = 0;
+        }
+    }
+
+    cmd.device = vDevices[selected];
+}
+
+int getSdkVersion()
+{
+    string command = "adb -s " + cmd.device + " shell getprop ro.build.version.sdk";
+    //printf("command: %s\n", command.c_str());
+    FILE* fp = popen(command.c_str(), "r");
+
+    char number[10] = "";
+    int sdk = 0;
+
+    if(fp != NULL)
+    {
+        fgets(number, sizeof(number), fp);
+        sdk = atoi(number);
+    }
+
+    fclose(fp);
+    return sdk;
+}
+
+
+vector<string> &split(const string &s, char delim, vector<string> &elems) {
+    stringstream ss(s);
+    string item;
+    while (getline(ss, item, delim)) {
+        elems.push_back(item);
+    }
+    return elems;
+}
+
+
+bool ProcessMessageLineNewAPI(const char *line, int length, Message *msg)
+{
+    if (strnlen(line, length) < MIN_LINE_LEN)
+    {
+        msg->level = -1;
+        return false;
+    }
+
+    //NOTE: do not use strtok on the original string. it changes it.
+
+    vector<string> tokens;
+
+    vector<string>& results = split(string(line), ' ', tokens);
+
+    int iCount = 0;
+    for(unsigned int i=0; i<results.size(); i++)
+    {
+        //printf("results[%i]: %s\n", i, results[i].c_str());
+        if(results[i].length() > 0)
+        {
+            switch(iCount)
+            {
+                case 2:
+                    msg->pid = atoi(results[i].c_str());
+                break;
+
+                case 4:
+                    //process Log Level
+                    if (results[i] == "V") msg->level = 0;
+                    else if (results[i] == "I") msg->level = 1;
+                    else if (results[i] == "D") msg->level = 2;
+                    else if (results[i] == "W") msg->level = 3;
+                    else if (results[i] == "E") msg->level = 4;
+                    else msg->level = -1;
+                break;
+
+                case 5:
+                    msg->tag = results[i];
+                    if(msg->tag.length() > (TAG_LEN - 1))
+                        msg->tag.erase(TAG_LEN, std::string::npos);	//delimit to 20 chars
+                break;
+            }
+
+            iCount++;
+        }
+
+    }
+
+    const char* message = strchr(line+20, ':');
+
+
+    if(message == NULL)
+        msg->message = "null";
+    else msg->message = string(message+2);
+
+    if(msg->tag.size() > 1 && msg->tag.at(msg->tag.size()-1) == ':')
+    {
+        msg->tag = msg->tag.substr(0, msg->tag.size()-1);
+    }
+
+
+    return true;
 }
