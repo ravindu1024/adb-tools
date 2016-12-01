@@ -12,8 +12,11 @@
 #include <unistd.h>
 #include <algorithm>
 #include <vector>
-
+#include <istream>
+#include <iterator>
 #include "colors.h"
+
+#define VERSION "1.3"
 
 using namespace std;
 
@@ -29,6 +32,7 @@ using namespace std;
 #define		ARG_EXCLUDE			"-e"
 #define		ARG_FINDWORDS		"-f"
 #define		ARG_DEVICE			"-d"
+#define     ARG_PROCESS         "-p"
 #define		ARG_HELP			"--help"
 #define		ARG_VERSION			"--version"
 
@@ -46,6 +50,7 @@ struct CmdOptions
 	int loglevel;
 	string device;
 	string tags;
+    int pid;
 	list<string> findwords;
 	list<string> ignoreWords;
 };
@@ -70,6 +75,9 @@ void PrintHelp();
 bool IgnoreTag(const char* tag);
 void setDevice();
 int getSdkVersion();
+int getPid(string strName);
+vector<string> &split(const string &s, char delim, vector<string> &elems);
+std::vector<std::string> split(std::string const &input);
 
 
 
@@ -99,7 +107,7 @@ int main(int argc, char* argv[])
 			{
 				argType = string(argv[i], 2);
 				if (!(argType == ARG_DEVICE || argType == ARG_TAG || argType == ARG_FINDWORDS || 
-						argType == ARG_LOGLEVEL || argType == ARG_EXCLUDE))
+                        argType == ARG_LOGLEVEL || argType == ARG_EXCLUDE || argType == ARG_PROCESS))
 				{
 					//invalid argument
 					PrintHelp();
@@ -235,6 +243,10 @@ bool ProcessMessageLine(const char* line, int length, Message* msg)
 	}
 	else
 		msg->pid = -1;
+
+    //ignore based on pid
+    if(cmd.pid != 0 && cmd.pid != msg->pid)
+        return false;
 	
 	
 	//Process Message
@@ -354,6 +366,14 @@ void ProcessCmdOptions()
 	if (argMap.find(ARG_LOGLEVEL) != argMap.end())cmd.loglevel = GetLogLevelInt(argMap.at(ARG_LOGLEVEL).c_str()[0]);
 	if (argMap.find(ARG_TAG) != argMap.end())cmd.tags = argMap.at(ARG_TAG);
 
+    if(argMap.find(ARG_PROCESS) != argMap.end())
+    {
+        if(cmd.device.length() == 0)
+            setDevice();
+
+        cmd.pid = getPid(argMap.at(ARG_PROCESS));
+    }
+
 }
 
 
@@ -442,22 +462,24 @@ int GetTagColor(string tag)
 
 void PrintVersion()
 {
-	cout << "ADB logcat version 1.2\n" << endl;
+    cout << "ADB logcat version "VERSION"\n" << endl;
 }
 
 void PrintHelp()
 {
-	cout << "ADB logcat v1.2" << endl;
+    cout << "ADB logcat v"VERSION << endl;
 	cout << "Usage:" << endl;
 	cout << ARG_TAG" : select tags" << endl;
 	cout << ARG_DEVICE" : select device" << endl;
 	cout << ARG_FINDWORDS" : highlight given words" << endl;
 	cout << ARG_LOGLEVEL" : set minimum log level (D - debug, E - error, I - info, V - verbose, W - warning)" << endl;
 	cout << ARG_EXCLUDE" : exclude tags by wildcard" << endl;
+    cout << ARG_PROCESS" : filter by process name" << endl;
 	cout << ARG_VERSION" : show program version" << endl;
 	cout << ARG_HELP" : show this help section" << endl;
 	cout << "Example usage: logcat -d DEVICE_NAME -t TAG1 TAG2 TAG3 -l D -f word1 word2 \"word3 word4\"" << endl;
-	cout << "\t\tlogcat -e TAG1 TAG*\n" << endl;
+    cout << "\t\tlogcat -e TAG1 TAG*" << endl;
+    cout << "\t\tlogcat -p com.android.phone" << endl;
 }
 
 void setDevice()
@@ -549,6 +571,47 @@ int getSdkVersion()
     return sdk;
 }
 
+std::vector<std::string> split(std::string const &input)
+{
+    std::istringstream buffer(input);
+    std::vector<std::string> ret;
+
+    std::copy(std::istream_iterator<std::string>(buffer),
+              std::istream_iterator<std::string>(),
+              std::back_inserter(ret));
+    return ret;
+}
+
+int getPid(string strName)
+{
+    string command = "adb -s " + cmd.device + " shell ps";
+
+    FILE* fp = popen(command.c_str(), "r");
+
+    char pname[1024] = "";
+    int pid = 0;
+
+    if(fp != NULL)
+    {
+        while(fgets(pname, sizeof(pname), fp))
+        {
+
+            vector<string> line = split(string(pname));
+
+            if(line.back() == strName)
+            {
+                pid = atoi(line[1].c_str());
+                break;
+            }
+        }
+    }
+
+    fclose(fp);
+    return pid;
+}
+
+
+
 
 vector<string> &split(const string &s, char delim, vector<string> &elems) {
     stringstream ss(s);
@@ -605,8 +668,11 @@ bool ProcessMessageLineNewAPI(const char *line, int length, Message *msg)
 
             iCount++;
         }
-
     }
+
+    //PID based filtering
+    if(cmd.pid != 0 && cmd.pid != msg->pid)
+        return false;
 
     const char* message = strchr(line+20, ':');
 
