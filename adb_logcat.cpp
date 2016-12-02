@@ -48,7 +48,8 @@ struct Message
 struct CmdOptions
 {
 	int loglevel;
-	string device;
+    string deviceId;
+    string deviceName;
 	string tags;
     int pid;
 	list<string> findwords;
@@ -78,6 +79,7 @@ int getSdkVersion();
 int getPid(string strName);
 vector<string> &split(const string &s, char delim, vector<string> &elems);
 std::vector<std::string> split(std::string const &input);
+string getDeviceProperty(string deviceId, string property);
 
 
 
@@ -142,13 +144,13 @@ int main(int argc, char* argv[])
 		ProcessCmdOptions();
 	}
 
-    if(cmd.device.length() == 0)
+    if(cmd.deviceId.length() == 0)
         setDevice();
 
     int sdk = getSdkVersion();
     //printf("sdk version: %i\n", sdk);
 
-    printf("selected device: %s, SDK: %i\n", cmd.device.c_str(), sdk);
+    printf("selected device: %s, SDK: %i\n", cmd.deviceId.c_str(), sdk);
 
 
 	char szLine[MAX_BUFFER_LENGTH] = "";
@@ -164,8 +166,8 @@ int main(int argc, char* argv[])
 	}
 
 	string command = "adb logcat";
-	if (cmd.device.length() > 0)
-		command = "adb -s " + cmd.device + " logcat";
+    if (cmd.deviceId.length() > 0)
+        command = "adb -s " + cmd.deviceId + " logcat";
 	if (cmd.tags.length() > 0)
 		command += " -s " + cmd.tags;
 	
@@ -362,13 +364,13 @@ void PrintOutput(Message* msg, int maxMsgLen)
 
 void ProcessCmdOptions()
 {
-	if(argMap.find(ARG_DEVICE) != argMap.end()) cmd.device = argMap.at(ARG_DEVICE);
+    if(argMap.find(ARG_DEVICE) != argMap.end()) cmd.deviceId = argMap.at(ARG_DEVICE);
 	if (argMap.find(ARG_LOGLEVEL) != argMap.end())cmd.loglevel = GetLogLevelInt(argMap.at(ARG_LOGLEVEL).c_str()[0]);
 	if (argMap.find(ARG_TAG) != argMap.end())cmd.tags = argMap.at(ARG_TAG);
 
     if(argMap.find(ARG_PROCESS) != argMap.end())
     {
-        if(cmd.device.length() == 0)
+        if(cmd.deviceId.length() == 0)
             setDevice();
 
         cmd.pid = getPid(argMap.at(ARG_PROCESS));
@@ -486,6 +488,7 @@ void setDevice()
 {
     char szLine[MAX_BUFFER_LENGTH] = "";
     vector<string> vDevices;
+    vector<string> vDeviceNames;
 
     vDevices.clear();
 
@@ -502,7 +505,18 @@ void setDevice()
                 int len = c - szLine;
 
                 if(len > 0 && len < 100)
-                    vDevices.push_back(string(szLine, len));
+                {
+                    string device = string(szLine, len);
+                    vDevices.push_back(device);
+
+                    string brand = getDeviceProperty(device, "ro.product.brand");
+                    string name = getDeviceProperty(device, "ro.product.model");
+                    string release = getDeviceProperty(device, "ro.build.version.release");
+                    string sdkInt = getDeviceProperty(device, "ro.build.version.sdk");
+
+                    //printf("%s %s (Android %s, API %s)\n", brand.c_str(), name.c_str(), release.c_str(), sdkInt.c_str());
+                    vDeviceNames.push_back(brand + " " + name + " (Android " + release + ", API " + sdkInt + ")");
+                }
             }
 
             iCount++;
@@ -528,7 +542,7 @@ void setDevice()
             printf("Please select device:\n");
             for(unsigned int i=0; i<vDevices.size(); i++)
             {
-                printf("\t%i: %s\n", i+1, vDevices[i].c_str());
+                printf("\t%i: %s\n", i+1, /*vDevices[i].c_str(),*/ vDeviceNames[i].c_str());
             }
 
             scanf("%i", &selected);
@@ -549,12 +563,12 @@ void setDevice()
         }
     }
 
-    cmd.device = vDevices[selected];
+    cmd.deviceId = vDevices[selected];
 }
 
 int getSdkVersion()
 {
-    string command = "adb -s " + cmd.device + " shell getprop ro.build.version.sdk";
+    string command = "adb -s " + cmd.deviceId + " shell getprop ro.build.version.sdk";
     //printf("command: %s\n", command.c_str());
     FILE* fp = popen(command.c_str(), "r");
 
@@ -571,6 +585,32 @@ int getSdkVersion()
     return sdk;
 }
 
+string getDeviceProperty(string deviceId, string property)
+{
+    string command = "adb -s " + deviceId + " shell getprop " + property;
+
+    FILE* fp = popen(command.c_str(), "r");
+
+    char val[100] = "";
+
+
+    if(fp != NULL)
+    {
+        fgets(val, sizeof(val), fp);
+    }
+
+    if(val[0] > 96)
+        val[0] = val[0] - 32;
+
+    string str(val);
+
+    str.erase(std::remove(str.begin(), str.end(), '\n'), str.end());
+    str.erase(std::remove(str.begin(), str.end(), '\r'), str.end());
+
+    fclose(fp);
+    return str;
+}
+
 std::vector<std::string> split(std::string const &input)
 {
     std::istringstream buffer(input);
@@ -584,7 +624,7 @@ std::vector<std::string> split(std::string const &input)
 
 int getPid(string strName)
 {
-    string command = "adb -s " + cmd.device + " shell ps";
+    string command = "adb -s " + cmd.deviceId + " shell ps";
 
     FILE* fp = popen(command.c_str(), "r");
 
