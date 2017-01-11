@@ -15,6 +15,7 @@
 #include <istream>
 #include <iterator>
 #include "colors.h"
+#include <pthread.h>
 
 #define VERSION "1.3"
 
@@ -60,6 +61,7 @@ map<string, string> argMap;
 map<std::string, int> mpTagList;
 CmdOptions cmd;
 int color = 1;
+pthread_t pidThread_t;
 
 
 
@@ -77,6 +79,7 @@ bool IgnoreTag(const char* tag);
 void setDevice();
 int getSdkVersion();
 int getPid(string strName);
+void* PidMonitorThread(void* param);
 vector<string> &split(const string &s, char delim, vector<string> &elems);
 std::vector<std::string> split(std::string const &input);
 string getDeviceProperty(string deviceId, string property);
@@ -247,7 +250,7 @@ bool ProcessMessageLine(const char* line, int length, Message* msg)
 		msg->pid = -1;
 
     //ignore based on pid
-    if(cmd.pid != 0 && cmd.pid != msg->pid)
+    if((cmd.pid != 0 && cmd.pid != msg->pid) || cmd.pid == -1)
         return false;
 	
 	
@@ -374,9 +377,32 @@ void ProcessCmdOptions()
             setDevice();
 
         cmd.pid = getPid(argMap.at(ARG_PROCESS));
+
+        pthread_create(&pidThread_t, NULL, PidMonitorThread, NULL);
     }
 
 }
+
+void* PidMonitorThread(void* param)
+{
+    while(1)
+    {
+        //cout<<"in thread. checking pid"<<endl;
+        if(argMap.find(ARG_PROCESS) != argMap.end())
+        {
+            int pid = getPid(argMap.at(ARG_PROCESS));
+            if(pid != cmd.pid && pid != 0)
+            {
+                //cout << "setting new pid: "<<pid <<endl;
+                cmd.pid = pid;
+            }
+        }
+
+        sleep(1);
+    }
+    return NULL;
+}
+
 
 
 bool DoHighlight(const char* msg)
@@ -629,7 +655,7 @@ int getPid(string strName)
     FILE* fp = popen(command.c_str(), "r");
 
     char pname[1024] = "";
-    int pid = 0;
+    int pid = -1;
 
     if(fp != NULL)
     {
@@ -711,7 +737,7 @@ bool ProcessMessageLineNewAPI(const char *line, int length, Message *msg)
     }
 
     //PID based filtering
-    if(cmd.pid != 0 && cmd.pid != msg->pid)
+    if((cmd.pid != 0 && cmd.pid != msg->pid) || cmd.pid == -1)
         return false;
 
     const char* message = strchr(line+20, ':');

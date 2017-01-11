@@ -1,7 +1,7 @@
 all:
 	g++ -Wall -o adb_top adb_top.cpp
 	g++ -Wall -o adb_meminfo adb_dumpmem.cpp
-	g++ -Wall -o logcat adb_logcat.cpp 
+	g++ -pthread -Wall -o logcat adb_logcat.cpp 
 
 	
 	if [ ! -d bin ]; then mkdir bin; fi
