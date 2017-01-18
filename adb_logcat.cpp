@@ -664,7 +664,7 @@ int getPid(string strName)
 
             vector<string> line = split(string(pname));
 
-            if(line.back() == strName)
+            if(line.size() > 0 && line.back() == strName)
             {
                 pid = atoi(line[1].c_str());
                 break;
