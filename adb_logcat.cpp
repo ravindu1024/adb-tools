@@ -657,6 +657,7 @@ int getPid(string strName)
     char pname[1024] = "";
     int pid = -1;
 
+
     if(fp != NULL)
     {
         while(fgets(pname, sizeof(pname), fp))
@@ -664,10 +665,22 @@ int getPid(string strName)
 
             vector<string> line = split(string(pname));
 
-            if(line.size() > 0 && line.back() == strName)
+            if(line.size() > 1)
             {
-                pid = atoi(line[1].c_str());
-                break;
+                string pname = line.back();
+
+                if(pname.size() > strName.size() && pname.find(strName, 0) != string::npos)
+                {
+                    pid = atoi(line[1].c_str());
+                    //cout<<"partial match on pname: "<<pname<<endl;
+                }
+
+                if(pname == strName)
+                {
+                    pid = atoi(line[1].c_str());
+                    //cout<<"found PID for : "<<pname<<endl;
+                    break;
+                }
             }
         }
     }
