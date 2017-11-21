@@ -8,6 +8,7 @@
 #include <iostream>
 #include <vector>
 #include <sstream>
+#include "Adb.h"
 
 #define VERSION "1.0.1"
 
@@ -60,7 +61,7 @@ int main(int argc, char* argv[])
 	}
 
 	char szCommand[STR_LEN] = "";
-	sprintf(szCommand, "adb shell dumpsys meminfo %s", argv[1]);
+	sprintf(szCommand, ADB" shell dumpsys meminfo %s", argv[1]);
 
 	FILE* fp = NULL;
 	char line[STR_LEN] = "";

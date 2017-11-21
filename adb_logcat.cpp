@@ -16,6 +16,7 @@
 #include <iterator>
 #include "colors.h"
 #include <pthread.h>
+#include "Adb.h"
 
 #define VERSION "1.3"
 
@@ -168,9 +169,9 @@ int main(int argc, char* argv[])
 		return 0;
 	}
 
-	string command = "adb logcat";
+	string command = ADB" logcat";
     if (cmd.deviceId.length() > 0)
-        command = "adb -s " + cmd.deviceId + " logcat";
+        command = ADB" -s " + cmd.deviceId + " logcat";
 	if (cmd.tags.length() > 0)
 		command += " -s " + cmd.tags;
 	
@@ -518,7 +519,7 @@ void setDevice()
 
     vDevices.clear();
 
-    FILE* fp = popen("adb devices", "r");
+    FILE* fp = popen(ADB" devices", "r");
 
     int iCount = 0;
     if (NULL != fp)
@@ -594,7 +595,7 @@ void setDevice()
 
 int getSdkVersion()
 {
-    string command = "adb -s " + cmd.deviceId + " shell getprop ro.build.version.sdk";
+    string command = ADB" -s " + cmd.deviceId + " shell getprop ro.build.version.sdk";
     //printf("command: %s\n", command.c_str());
     FILE* fp = popen(command.c_str(), "r");
 
@@ -613,7 +614,7 @@ int getSdkVersion()
 
 string getDeviceProperty(string deviceId, string property)
 {
-    string command = "adb -s " + deviceId + " shell getprop " + property;
+    string command = ADB" -s " + deviceId + " shell getprop " + property;
 
     FILE* fp = popen(command.c_str(), "r");
 
@@ -650,7 +651,7 @@ std::vector<std::string> split(std::string const &input)
 
 int getPid(string strName)
 {
-    string command = "adb -s " + cmd.deviceId + " shell ps";
+    string command = ADB" -s " + cmd.deviceId + " shell ps";
 
     FILE* fp = popen(command.c_str(), "r");
 
